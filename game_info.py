@@ -199,13 +199,63 @@ def list_games(root):
     return games
 
 
-def fill(root, lang="en", replace=False, progress=None, cancel=None, threads=8):
-    """Fill in the info for every game under root. progress(i, total, name,
-    status) is called as each game finishes. Returns a summary dict."""
-    games = list_games(root)
+def backup_dir_for(root):
+    return os.path.join(root, "CFG", "info-backup", time.strftime("%Y-%m-%d_%H%M%S"))
+
+
+def backup(root, gid, backup_dir=None):
+    """Copy CFG/<gid>.cfg into a backup folder before it changes. Returns
+    the folder, or None when there was no file to save."""
+    cfg = os.path.join(root, "CFG", gid + ".cfg")
+    if not os.path.exists(cfg):
+        return None
+    backup_dir = backup_dir or backup_dir_for(root)
+    os.makedirs(backup_dir, exist_ok=True)
+    shutil.copy2(cfg, os.path.join(backup_dir, gid + ".cfg"))
+    return backup_dir
+
+
+def load_info(root, gid):
+    """The game's .cfg as {key: value} (info and settings alike)."""
+    return {k: v for k, v in read_cfg(os.path.join(root, "CFG", gid + ".cfg")) if v is not None}
+
+
+def save_info(root, gid, values):
+    """Set info keys by hand: values maps key -> text, "" removes the key.
+    Other lines ($ settings and the rest) stay as they are. Returns the
+    backup folder used, if any."""
+    cfg = os.path.join(root, "CFG", gid + ".cfg")
+    os.makedirs(os.path.dirname(cfg), exist_ok=True)
+    items = read_cfg(cfg)
+    have = {k: i for i, (k, v) in enumerate(items) if v is not None}
+    changed = False
+    for k, v in values.items():
+        v = " ".join(str(v).split())  # one line: OPL reads key=value lines
+        if k in have:
+            if not v:
+                items[have[k]] = None
+                changed = True
+            elif items[have[k]][1] != v:
+                items[have[k]] = (k, v)
+                changed = True
+        elif v:
+            items.append((k, v))
+            changed = True
+    if not changed:
+        return None
+    bdir = backup(root, gid)
+    write_cfg(cfg, [it for it in items if it is not None])
+    return bdir
+
+
+def fill(root, lang="en", replace=False, progress=None, cancel=None, threads=8, games=None):
+    """Fill in the info for every game under root (or the given list from
+    list_games). progress(i, total, name, status) is called as each game
+    finishes. Returns a summary dict."""
+    games = list_games(root) if games is None else games
     cfg_dir = os.path.join(root, "CFG")
     os.makedirs(cfg_dir, exist_ok=True)
-    backup_dir = os.path.join(cfg_dir, "info-backup", time.strftime("%Y-%m-%d_%H%M%S"))
+    backup_dir = backup_dir_for(root)
     summary = {"games": len(games), "updated": 0, "complete": 0, "no_entry": 0,
                "no_id": 0, "errors": 0, "backup": None}
     lock = threading.Lock()

@@ -12,10 +12,11 @@ Nothing to install: Python is included.
 If Windows SmartScreen says it "protected your PC": More info > Run anyway.
 (The program is not signed.)
 
-Game info: "Game info..." fills in genre, release date, developer, players
-and description for OPL's info screen, from the PS2 OPL CFG Database on
-GitHub. Your own game settings are kept; changed files are backed up to
-CFG\info-backup.
+OPL Library.exe (or the "OPL Library..." button): your games in one list.
+Rename a game, edit its info by hand, fetch info (genre, release date,
+developer, players, description) from the PS2 OPL CFG Database, and
+compress ISOs to ZSO. Game settings and memory cards are never touched;
+changed CFG files are backed up to CFG\info-backup.
 
 RetroAchievements: the window also runs xeRAbora. It finds xerabora in
 Downloads or on the Desktop, or press Download in the RetroAchievements

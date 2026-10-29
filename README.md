@@ -9,7 +9,7 @@ games from a PC or Mac with OPL-RA (the UDPFS build in `../OPL-RA-udpfs`).
   plain `Game.iso` (not `Game.zso.iso`), hidden while `Game.iso` itself
   exists, and the `ZSO\0` reader masks the stored-block flag. Academic Free License 3.0 (`LICENSE.txt`).
 - `zso_tool.py`: ISO -> ZSO compressor (ZISO v1, as maxcso writes it;
-  OPL and PCSX2 read it too). Used by the window's "Compress games", or
+  OPL and PCSX2 read it too). Used by OPL Library's Compress, or
   on its own: `python3 zso_tool.py GAME.iso`. Needs `lz4`
   (`vendor/wheels` for the bundles, `pip install lz4` otherwise).
 - `game_info.py`: fills `CFG/<game ID>.cfg` with game info (Title, Genre,
@@ -18,7 +18,11 @@ games from a PC or Mac with OPL-RA (the UDPFS build in `../OPL-RA-udpfs`).
   (GPL-3.0; info from ScreenScraper.fr), one file per game ID fetched from
   GitHub. Game IDs come from each disc's SYSTEM.CNF (ISO, ZSO or CSO). Only
   missing info lines are added; `$` settings are never copied; changed files
-  are backed up to `CFG/info-backup/`. The window's "Game info..." runs it.
+  are backed up to `CFG/info-backup/`. OPL Library's Fetch info runs it.
+- `opl_library.pyw`: OPL Library, the game manager: rename, edit info by
+  hand, fetch info (`game_info.py`), compress (`zso_tool.py`). Started from
+  UDPFS Server's "OPL Library..." button, `OPL Library.exe`, or
+  `OPL Library.app` (which uses UDPFS Server.app's Python).
 - `udpfs_gui.pyw`: the window (Python standard library + tkinter). Windows,
   macOS, Linux. It also runs [xeRAbora](https://github.com/hacan359/xerabora)
   (found next to the app, in Downloads or on the Desktop, or fetched with

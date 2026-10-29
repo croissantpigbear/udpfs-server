@@ -1,0 +1,14 @@
+#!/bin/bash
+# OPL Library: runs app/opl_library.pyw with the Python inside UDPFS Server.app
+# (next to this app, or in Applications), so it carries no Python of its own.
+SELF="$(cd "$(dirname "$0")/../../.." && pwd)"
+for SRV in "$SELF/UDPFS Server.app" "/Applications/UDPFS Server.app" "$HOME/Applications/UDPFS Server.app"; do
+  RES="$SRV/Contents/Resources"
+  [ -f "$RES/app/opl_library.pyw" ] || continue
+  if [ "$(sysctl -n hw.optional.arm64 2>/dev/null)" = "1" ] && [ -x "$RES/python-aarch64/bin/python3" ]; then
+    exec "$RES/python-aarch64/bin/python3" "$RES/app/opl_library.pyw" "$@"
+  fi
+  [ -x "$RES/python-x86_64/bin/python3" ] && exec "$RES/python-x86_64/bin/python3" "$RES/app/opl_library.pyw" "$@"
+done
+/usr/bin/osascript -e 'display alert "OPL Library needs UDPFS Server" message "Put OPL Library and UDPFS Server in the same folder (for example Applications), then open OPL Library again." as critical'
+exit 1

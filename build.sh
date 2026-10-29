@@ -24,7 +24,7 @@ prune() { # python root, stdlib dir: drop what the window never uses
   rm -f "$1"/bin/pip* "$1"/bin/idle* "$1"/bin/pydoc* "$1"/bin/2to3*
   find "$1" -name __pycache__ -type d -prune -exec rm -rf {} +
 }
-APPFILES=(udpfs_server.py compressed_iso LICENSE.txt udpfs_gui.pyw zso_tool.py game_info.py icon.png)
+APPFILES=(udpfs_server.py compressed_iso LICENSE.txt udpfs_gui.pyw opl_library.pyw zso_tool.py game_info.py icon.png)
 LZ4=4.4.5
 wheel() { # platform tag, site-packages dir: lz4 for ZSO (vendor/wheels, from PyPI)
   local w=(vendor/wheels/lz4-$LZ4-cp312-cp312-$1.whl)
@@ -36,13 +36,16 @@ wheel() { # platform tag, site-packages dir: lz4 for ZSO (vendor/wheels, from Py
 if command -v x86_64-w64-mingw32-gcc >/dev/null; then
   x86_64-w64-mingw32-windres windows/res.rc -O coff -o build/res.o
   x86_64-w64-mingw32-gcc -O2 -municode -mwindows -s -Wl,--no-insert-timestamp -o "windows/UDPFS Server.exe" windows/launcher.c build/res.o
+  x86_64-w64-mingw32-windres windows/res_library.rc -O coff -o build/res_library.o
+  x86_64-w64-mingw32-gcc -O2 -municode -mwindows -s -Wl,--no-insert-timestamp '-DSCRIPT=L"opl_library.pyw"' \
+    '-DAPPNAME=L"OPL Library"' -o "windows/OPL Library.exe" windows/launcher.c build/res_library.o
 fi
 W="build/win/UDPFS Server"; mkdir -p "$W/app"
 tar xzf "$(fetch x86_64-pc-windows-msvc)" -C "$W"
 prune "$W/python" "$W/python/Lib"
 wheel win_amd64 "$W/python/Lib/site-packages"
 cp -R "${APPFILES[@]}" "$W/app/"
-cp "windows/UDPFS Server.exe" windows/README.txt "$W/"
+cp "windows/UDPFS Server.exe" "windows/OPL Library.exe" windows/README.txt "$W/"
 (cd build/win && zip -qr ../../dist/UDPFS-Server-windows.zip "UDPFS Server" -x '*.DS_Store')
 
 # ---- Mac
@@ -58,8 +61,11 @@ for arch in x86_64 aarch64; do
 done
 cp -R "${APPFILES[@]}" "$APP/Contents/Resources/app/"
 chmod +x "$APP/Contents/MacOS/UDPFS Server"
+LIBAPP="build/mac/OPL Library.app"
+cp -R macos/library-template "$LIBAPP"
+chmod +x "$LIBAPP/Contents/MacOS/OPL Library"
 cp "macos/READ ME.txt" build/mac/
-(cd build/mac && zip -qry ../../dist/UDPFS-Server-mac.zip "UDPFS Server.app" "READ ME.txt" -x '*.DS_Store')
+(cd build/mac && zip -qry ../../dist/UDPFS-Server-mac.zip "UDPFS Server.app" "OPL Library.app" "READ ME.txt" -x '*.DS_Store')
 
 rm -rf build
 ls -l dist
