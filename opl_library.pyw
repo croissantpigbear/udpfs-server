@@ -5,7 +5,9 @@ OPL Library - manage the games in an OPL folder.
   Rename        the name OPL lists a game under (the file name)
   Edit info     title, genre, release, developer, players, rating and
                 description in CFG/<game ID>.cfg, for OPL's info screen
-  Fetch info    the same fields from the PS2 OPL CFG Database (game_info.py)
+  Fetch info    the same fields from the PS2 OPL CFG Database, with the
+                libretro database (psxdatacenter) for what it lacks
+  Check Redump  compares each disc image's checksum with Redump's list
   Compress      ISO -> ZSO (zso_tool.py)
 
 Game settings (memory cards, compatibility modes) are never touched; every
@@ -107,6 +109,7 @@ class Game:
         self.name = m.group(2) if m else self.stem
         self.gid = None
         self.info_state = ""
+        self.redump = None       # game_info.redump_check() result
 
     def refresh_files(self):
         d = os.path.join(self.root, self.sub)
@@ -146,10 +149,11 @@ class Library:
         self.job = None
         self.games = {}
         self.id_cache = load_json("opl_library_ids.json")
+        self.redump_cache = load_json("opl_library_redump.json")
 
         root.title(APP_TITLE)
-        root.minsize(760, 480)
-        root.geometry("900x620")
+        root.minsize(900, 480)
+        root.geometry("1010x640")
         outer = ttk.Frame(root, padding=10)
         outer.pack(fill="both", expand=True)
 
@@ -176,13 +180,16 @@ class Library:
 
         box = ttk.Frame(outer)
         box.pack(fill="both", expand=True, pady=(8, 0))
-        cols = ("id", "folder", "fmt", "size", "info")
+        cols = ("id", "folder", "fmt", "size", "info", "redump")
         self.tree = ttk.Treeview(box, columns=cols, selectmode="extended")
         for c, t, w, a in (("#0", "Name (as OPL lists it)", 330, "w"), ("id", "Game ID", 100, "w"),
                            ("folder", "Folder", 60, "center"), ("fmt", "Format", 80, "center"),
-                           ("size", "Size", 80, "e"), ("info", "Info", 140, "w")):
+                           ("size", "Size", 80, "e"), ("info", "Info", 110, "w"),
+                           ("redump", "Redump", 130, "w")):
             self.tree.heading(c, text=t)
             self.tree.column(c, width=w, anchor=a)
+        self.tree.tag_configure("verified", foreground=GOOD)
+        self.tree.tag_configure("different", foreground=BAD)
         sb = ttk.Scrollbar(box, command=self.tree.yview)
         self.tree.configure(yscrollcommand=sb.set)
         self.tree.pack(side="left", fill="both", expand=True)
@@ -209,8 +216,9 @@ class Library:
             b.pack(side="left", padx=(0, 8))
             self.btns.append(b)
         self.compress_btn = ttk.Button(bar, text="Compress (all)...", command=self.compress, width=22)
+        self.redump_btn = ttk.Button(bar, text="Check Redump (all)...", command=self.check_redump, width=24)
         self.fetch_btn = ttk.Button(bar, text="Fetch info (all)...", command=self.fetch_info, width=22)
-        for b in (self.compress_btn, self.fetch_btn):
+        for b in (self.compress_btn, self.redump_btn, self.fetch_btn):
             b.pack(side="right", padx=(8, 0))
             self.btns.append(b)
         self.stop_btn = ttk.Button(bar, text="Stop", command=self.cancel.set, state="disabled")
@@ -218,7 +226,7 @@ class Library:
 
         self.progress = ttk.Progressbar(outer, maximum=1000)
         self.progress.pack(fill="x", pady=(8, 0))
-        self.status = ttk.Label(outer, text="", foreground=MUTED, wraplength=860, justify="left")
+        self.status = ttk.Label(outer, text="", foreground=MUTED, wraplength=970, justify="left")
         self.status.pack(fill="x", pady=(4, 0))
 
         root.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -258,6 +266,9 @@ class Library:
                 g.gid = c[2]
             else:
                 todo.append(key)
+            rc = self.redump_cache.get(g.path)
+            if rc and rc[0] == st.st_size and rc[1] == int(st.st_mtime):
+                g.redump = rc[2]
         self.refresh_info_states()
         if todo:
             self.run_job(self._read_ids, todo, label="Reading game IDs")
@@ -298,7 +309,8 @@ class Library:
             g = self.games[key]
             if q and q not in g.name.lower() and q not in (g.gid or "").lower():
                 continue
-            self.tree.insert("", "end", iid=key, text=g.name, values=self.row_values(g), image=self.img_off)
+            self.tree.insert("", "end", iid=key, text=g.name, values=self.row_values(g), image=self.img_off,
+                             tags=self.row_tags(g))
             shown += 1
         self.count.configure(text=f"{shown} of {len(self.games)} games")
         self.on_select()
@@ -348,14 +360,24 @@ class Library:
         what = f"{n} selected" if n else "all"
         self.fetch_btn.configure(text=f"Fetch info ({what})...")
         self.compress_btn.configure(text=f"Compress ({what})...")
+        self.redump_btn.configure(text=f"Check Redump ({what})...")
+        if n == 1 and self.job is None:
+            g = self.games.get(next(iter(sel)))
+            if g is not None and g.redump:
+                self.say(f"{g.name}: {g.redump['detail']}",
+                         GOOD if g.redump["state"] == "verified" else
+                         BAD if g.redump["state"] == "different" else WARN)
 
     def row_values(self, g):
-        return (g.gid or "", g.sub, g.fmt, human(g.size), g.info_state)
+        return (g.gid or "", g.sub, g.fmt, human(g.size), g.info_state, g.redump["text"] if g.redump else "")
+
+    def row_tags(self, g):
+        return (g.redump["state"],) if g.redump and g.redump["state"] in ("verified", "different") else ()
 
     def update_row(self, key):
         g = self.games.get(key)
         if g is not None and self.tree.exists(key):
-            self.tree.item(key, text=g.name, values=self.row_values(g))
+            self.tree.item(key, text=g.name, values=self.row_values(g), tags=self.row_tags(g))
 
     def selected(self):
         return [self.games[k] for k in self.tree.selection() if k in self.games]
@@ -401,6 +423,9 @@ class Library:
         if old_path in self.id_cache:
             self.id_cache[g.path] = self.id_cache.pop(old_path)
             save_json("opl_library_ids.json", self.id_cache)
+        if old_path in self.redump_cache:
+            self.redump_cache[g.path] = self.redump_cache.pop(old_path)
+            save_json("opl_library_redump.json", self.redump_cache)
         self.games[f"{g.sub}/{g.stem}"] = self.games.pop(old_key)
         self.fill_tree()
         self.tree.selection_set(f"{g.sub}/{g.stem}")
@@ -463,21 +488,79 @@ class Library:
         dlg = FetchDialog(self.root, len(games), bool(self.selected()))
         if dlg.result is None:
             return
-        lang, replace = dlg.result
+        lang, replace, sources = dlg.result
         root = self.folder.get().strip()
         targets = [(g.sub, g.files[0], g.path) for g in games]
 
         def work(_):
-            s = game_info.fill(root, lang, replace, cancel=self.cancel, games=targets,
+            if len(sources) > 1:
+                self.q.put(("progress", 0, "Downloading the libretro database (once a week, about 8 MB)..."))
+            s = game_info.fill(root, lang, replace, cancel=self.cancel, games=targets, sources=sources,
                                progress=lambda i, n, name, st: self.q.put(("progress", i / n, f"{name}: {st}")))
             self.q.put(("refresh_info",))
-            text = f"{s['updated']} updated, {s['complete']} already complete, {s['no_entry']} not in the database"
+            text = f"{s['updated']} updated, {s['complete']} already complete, {s['no_entry']} not in any database"
             if s["no_id"]:
                 text += f", {s['no_id']} without a game ID"
             if s["errors"]:
                 text += f", {s['errors']} could not be downloaded"
             return text + "."
         self.run_job(work, None, label="Fetching info")
+
+    # ---- redump ----
+
+    def check_redump(self):
+        games = self.selected() or list(self.games.values())
+        if not games:
+            return
+        dlg = RedumpDialog(self.root, games, bool(self.selected()))
+        if dlg.result is None:
+            return
+        again = dlg.result
+        todo = [g for g in games if again or not g.redump]
+        if not todo:
+            self.say("All of these games have been checked already (tick 'Check again' to redo them).", MUTED)
+            return
+        total = sum(g.size for g in todo) or 1
+
+        def work(_):
+            self.q.put(("progress", 0, "Downloading Redump's list (once a week, about 4 MB)..."))
+            db = game_info.redump_db()
+            counts = {"verified": 0, "cd-size": 0, "different": 0, "unknown": 0}
+            done_bytes = 0
+            for g in todo:
+                if self.cancel.is_set():
+                    break
+                if not g.gid:
+                    g.gid = game_info.game_id(g.path)
+                sz = g.size
+
+                def prog(done, isz, base=done_bytes, g=g, sz=sz):
+                    self.q.put(("progress", (base + done / max(isz, 1) * sz) / total,
+                                f"Checking {g.name}: {done * 100 // max(isz, 1)}%"))
+                try:
+                    res = game_info.redump_check(g.path, g.gid, db, prog, self.cancel)
+                except Exception as e:
+                    res = {"state": "error", "text": "could not read", "detail": f"Could not read it: {e}",
+                           "name": ""}
+                if res["state"] is None:
+                    break
+                g.redump = res
+                if res["state"] in counts:
+                    counts[res["state"]] += 1
+                st = os.stat(g.path)
+                self.redump_cache[g.path] = [st.st_size, int(st.st_mtime), res]
+                save_json("opl_library_redump.json", self.redump_cache)
+                self.q.put(("row", f"{g.sub}/{g.stem}"))
+                done_bytes += sz
+            parts = [f"{counts['verified']} verified"]
+            if counts["cd-size"]:
+                parts.append(f"{counts['cd-size']} CD games with the right size")
+            if counts["different"]:
+                parts.append(f"{counts['different']} not matching Redump")
+            if counts["unknown"]:
+                parts.append(f"{counts['unknown']} not in Redump")
+            return "Redump: " + ", ".join(parts) + ". Tick a game to see the details."
+        self.run_job(work, None, label="Checking against Redump")
 
     # ---- compress ----
 
@@ -707,11 +790,52 @@ class FetchDialog(Dialog):
         self.replace = tk.BooleanVar(value=False)
         ttk.Checkbutton(self.body, text="Also replace info that is already there",
                         variable=self.replace).grid(row=2, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        saved = load_json("opl_library.json")
+        self.libretro = tk.BooleanVar(value=saved.get("use_libretro", True))
+        self.redump = tk.BooleanVar(value=saved.get("use_redump_titles", True))
+        ttk.Label(self.body, text="Where the database has no entry, or leaves fields empty:").grid(
+            row=3, column=0, columnspan=2, sticky="w", pady=(10, 0))
+        ttk.Checkbutton(self.body, text="libretro database (psxdatacenter.com, in English): genre, publisher, "
+                        "players, description...", variable=self.libretro).grid(
+            row=4, column=0, columnspan=2, sticky="w", padx=(12, 0), pady=(4, 0))
+        ttk.Checkbutton(self.body, text="Redump's disc list: at least the title", variable=self.redump).grid(
+            row=5, column=0, columnspan=2, sticky="w", padx=(12, 0), pady=(2, 0))
         self.buttons("Fetch")
         self.show()
 
     def ok(self):
-        self.result = ("fr" if self.lang.get() == "French" else "en", self.replace.get())
+        sources = ["opl"] + (["libretro"] if self.libretro.get() else []) + (["redump"] if self.redump.get() else [])
+        s = load_json("opl_library.json")
+        s["use_libretro"], s["use_redump_titles"] = self.libretro.get(), self.redump.get()
+        save_json("opl_library.json", s)
+        self.result = ("fr" if self.lang.get() == "French" else "en", self.replace.get(), tuple(sources))
+        self.destroy()
+
+
+class RedumpDialog(Dialog):
+    def __init__(self, parent, games, selection):
+        super().__init__(parent, "Check against Redump")
+        n = len(games)
+        done = sum(1 for g in games if g.redump)
+        total = sum(g.size for g in games)
+        ttk.Label(self.body, wraplength=460, justify="left", text=(
+            f"Check {'the ' + str(n) + ' selected' if selection else 'all ' + str(n)} game(s) against Redump, "
+            "the list of verified good disc dumps. Each image is read in full (ZSO decompressed) and its SHA-1 "
+            f"compared, so this takes a while: {human(total)} to read, roughly a minute per DVD game.\n\n"
+            "verified: an exact copy of a Redump disc\n"
+            "not a Redump dump: Redump knows the game but this image differs (patched, trimmed, damaged)\n"
+            "size matches (CD): Redump lists CD games as .bin, so only the size can be compared\n"
+            "not in Redump: an unknown disc (demo, prototype, homebrew, modified)")).grid(
+            row=0, column=0, sticky="w")
+        self.again = tk.BooleanVar(value=False)
+        if done:
+            ttk.Checkbutton(self.body, text=f"Check again the {done} game(s) already checked",
+                            variable=self.again).grid(row=1, column=0, sticky="w", pady=(10, 0))
+        self.buttons("Check")
+        self.show()
+
+    def ok(self):
+        self.result = self.again.get()
         self.destroy()
 
 

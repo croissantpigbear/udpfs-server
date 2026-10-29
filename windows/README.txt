@@ -17,6 +17,11 @@ Rename a game, edit its info by hand, fetch info (genre, release date,
 developer, players, description) from the PS2 OPL CFG Database, and
 compress ISOs to ZSO. Game settings and memory cards are never touched;
 changed CFG files are backed up to CFG\info-backup.
+Fetch info also fills what that database lacks (publisher, genre,
+description...) from the libretro database. Check Redump reads each game
+and compares its checksum with Redump's list of good dumps: verified, not
+a Redump dump (patched, trimmed or damaged), or not in Redump. CD games
+can only be size-checked (Redump keeps CDs as .bin).
 Click games to tick them (Shift-click for a range, Select all or Ctrl+A
 for every game shown); Fetch info and Compress use the ticked games, or
 all games when none are ticked.

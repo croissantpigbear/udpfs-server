@@ -19,6 +19,11 @@ games from a PC or Mac with OPL-RA (the UDPFS build in `../OPL-RA-udpfs`).
   GitHub. Game IDs come from each disc's SYSTEM.CNF (ISO, ZSO or CSO). Only
   missing info lines are added; `$` settings are never copied; changed files
   are backed up to `CFG/info-backup/`. OPL Library's Fetch info runs it.
+  What the database lacks comes from the libretro database
+  ([libretro-database](https://github.com/libretro/libretro-database)
+  `metadat/developer`, game info from psxdatacenter.com), then the title from
+  Redump's list. `--redump` checks each image's SHA-1 against Redump's list
+  of good dumps (`metadat/redump`); both files are cached for a week.
 - `opl_library.pyw`: OPL Library, the game manager: rename, edit info by
   hand, fetch info (`game_info.py`), compress (`zso_tool.py`). Started from
   UDPFS Server's "OPL Library..." button, `OPL Library.exe`, or
