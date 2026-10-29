@@ -522,13 +522,43 @@ class UdpfsServer:
         return resolved
 
     def _transform_compressed_name(self, name: str) -> str:
-        """Append .iso to supported compressed files for directory listing."""
+        """List a supported compressed file as a plain ISO: game.zso appears
+        as game.iso, so OPL shows the same title it would for the ISO and
+        nothing on the console has to know about compression."""
         if self.enable_compression and _is_supported_compressed_path(name):
-            return name + '.iso'
+            return os.path.splitext(name)[0] + '.iso'
         return name
 
+    def _visible_entries(self, entries):
+        """Directory entries as the console sees them with compression on:
+        a compressed game is hidden while an ISO of the same name exists
+        (half-way through converting a library), and of two compressed
+        copies of one game only the first supported format is listed."""
+        if not self.enable_compression:
+            return entries
+        order = _get_supported_compressed_extensions()
+        stems = {}
+        for e in entries:
+            stem, ext = os.path.splitext(e.name)
+            ext = ext.lower()
+            if ext == '.iso' or ext in order:
+                rank = -1 if ext == '.iso' else order.index(ext)
+                key = stem.lower()
+                if key not in stems or rank < stems[key]:
+                    stems[key] = rank
+        out = []
+        for e in entries:
+            stem, ext = os.path.splitext(e.name)
+            ext = ext.lower()
+            if ext in order and stems.get(stem.lower()) != order.index(ext):
+                continue
+            out.append(e)
+        return out
+
     def _find_compressed_version(self, iso_path: str) -> Optional[str]:
-        """Resolve a virtual <compressed-name>.iso path to its exact backing file."""
+        """Resolve a virtual .iso path to the compressed file behind it:
+        game.iso -> game.zso / game.cso / game.chd (the form listed), or
+        the older game.zso.iso form."""
         if not self.enable_compression:
             return None
         if not iso_path.lower().endswith('.iso'):
@@ -537,6 +567,10 @@ class UdpfsServer:
         compressed = iso_path[:-4]
         if _is_supported_compressed_path(compressed) and os.path.exists(compressed):
             return compressed
+        for ext in _get_supported_compressed_extensions():
+            for cand in (compressed + ext, compressed + ext.upper()):
+                if os.path.exists(cand):
+                    return cand
         return None
 
     def _get_compressed_stat(self, file_path: str, original_stat) -> Optional[dict]:
@@ -801,7 +835,7 @@ class UdpfsServer:
         if is_dir:
             # Directory open
             try:
-                entries = list(os.scandir(resolved))
+                entries = self._visible_entries(list(os.scandir(resolved)))
                 handle = self._alloc_handle({'entries': entries, 'index': 0}, is_dir=True)
                 if handle < 0:
                     self._send_open_reply(addr, handle)

@@ -2,7 +2,7 @@
 # Builds the two downloads, each with its own Python (python-build-standalone):
 #   dist/UDPFS-Server-windows.zip   UDPFS Server.exe + app\ + python\
 #   dist/UDPFS-Server-mac.zip       UDPFS Server.app (Intel + Apple silicon)
-# Needs bash, curl, tar, zip. The Windows launcher is rebuilt when
+# Needs bash, curl, tar, zip, unzip. The Windows launcher is rebuilt when
 # x86_64-w64-mingw32-gcc is installed (brew install mingw-w64 / apt install
 # gcc-mingw-w64-x86-64); otherwise windows/UDPFS Server.exe is used as is.
 set -e
@@ -24,7 +24,13 @@ prune() { # python root, stdlib dir: drop what the window never uses
   rm -f "$1"/bin/pip* "$1"/bin/idle* "$1"/bin/pydoc* "$1"/bin/2to3*
   find "$1" -name __pycache__ -type d -prune -exec rm -rf {} +
 }
-APPFILES=(udpfs_server.py compressed_iso LICENSE.txt udpfs_gui.pyw icon.png)
+APPFILES=(udpfs_server.py compressed_iso LICENSE.txt udpfs_gui.pyw zso_tool.py icon.png)
+LZ4=4.4.5
+wheel() { # platform tag, site-packages dir: lz4 for ZSO (vendor/wheels, from PyPI)
+  local w=(vendor/wheels/lz4-$LZ4-cp312-cp312-$1.whl)
+  [ -f "${w[0]}" ] || { echo "missing ${w[0]}"; exit 1; }
+  mkdir -p "$2" && (cd "$2" && unzip -qo "$OLDPWD/${w[0]}")
+}
 
 # ---- Windows
 if command -v x86_64-w64-mingw32-gcc >/dev/null; then
@@ -34,6 +40,7 @@ fi
 W="build/win/UDPFS Server"; mkdir -p "$W/app"
 tar xzf "$(fetch x86_64-pc-windows-msvc)" -C "$W"
 prune "$W/python" "$W/python/Lib"
+wheel win_amd64 "$W/python/Lib/site-packages"
 cp -R "${APPFILES[@]}" "$W/app/"
 cp "windows/UDPFS Server.exe" windows/README.txt "$W/"
 (cd build/win && zip -qr ../../dist/UDPFS-Server-windows.zip "UDPFS Server" -x '*.DS_Store')
@@ -46,6 +53,8 @@ for arch in x86_64 aarch64; do
   mkdir -p "$APP/Contents/Resources/python-$arch"
   tar xzf "$(fetch $arch-apple-darwin)" -C "$APP/Contents/Resources/python-$arch" --strip-components=1
   prune "$APP/Contents/Resources/python-$arch" "$APP/Contents/Resources/python-$arch/lib/python3.12"
+  if [ $arch = x86_64 ]; then tag=macosx_10_13_x86_64; else tag=macosx_11_0_arm64; fi
+  wheel $tag "$APP/Contents/Resources/python-$arch/lib/python3.12/site-packages"
 done
 cp -R "${APPFILES[@]}" "$APP/Contents/Resources/app/"
 chmod +x "$APP/Contents/MacOS/UDPFS Server"

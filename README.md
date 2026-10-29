@@ -5,7 +5,13 @@ games from a PC or Mac with OPL-RA (the UDPFS build in `../OPL-RA-udpfs`).
 
 - `udpfs_server.py`, `compressed_iso/`: from
   [rickgaiser/neutrino](https://github.com/rickgaiser/neutrino) `pc/` at
-  commit 7be8de2, unchanged. Academic Free License 3.0 (`LICENSE.txt`).
+  commit 7be8de2. Changed here: with `-c` a compressed game is listed as
+  plain `Game.iso` (not `Game.zso.iso`), hidden while `Game.iso` itself
+  exists, and the `ZSO\0` reader masks the stored-block flag. Academic Free License 3.0 (`LICENSE.txt`).
+- `zso_tool.py`: ISO -> ZSO compressor (ZISO v1, as maxcso writes it;
+  OPL and PCSX2 read it too). Used by the window's "Compress games", or
+  on its own: `python3 zso_tool.py GAME.iso`. Needs `lz4`
+  (`vendor/wheels` for the bundles, `pip install lz4` otherwise).
 - `udpfs_gui.pyw`: the window (Python standard library + tkinter). Windows,
   macOS, Linux.
 - `macos/app-template/`: the `UDPFS Server.app` bundle without Python or

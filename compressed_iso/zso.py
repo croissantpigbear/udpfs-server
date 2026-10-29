@@ -127,17 +127,17 @@ class ZsoFileWrapper(CompressedFileWrapper):
             next_offset = (next_raw_offset & 0x7FFFFFFF) << self.align
             compressed_size = next_offset - offset
         else:
-            # Original ZSO format
+            # Original ZSO format. The top bit flags a stored block; the
+            # offsets themselves are the lower 31 bits.
+            is_uncompressed = (raw_offset & 0x80000000) != 0
+            offset = raw_offset & 0x7FFFFFFF
             if block_idx + 1 < self._num_blocks:
-                next_offset = self.block_offsets[block_idx + 1]
-                compressed_size = next_offset - raw_offset
+                next_offset = self.block_offsets[block_idx + 1] & 0x7FFFFFFF
             else:
                 # Last block - get file size
                 self.file.seek(0, 2)
-                file_size = self.file.tell()
-                compressed_size = file_size - raw_offset
-            offset = raw_offset
-            is_uncompressed = (raw_offset & 0x80000000) != 0
+                next_offset = self.file.tell()
+            compressed_size = next_offset - offset
         
         # Read compressed data
         self.file.seek(offset)
