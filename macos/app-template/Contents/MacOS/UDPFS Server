@@ -1,28 +1,24 @@
 #!/bin/bash
-# Starts the UDPFS Server window with the first Python 3 that has tkinter.
+# Starts the UDPFS Server window with the Python inside this app.
 RES="$(cd "$(dirname "$0")/../Resources" && pwd)"
-GUI="$RES/udpfs-server/udpfs_gui.pyw"
+GUI="$RES/app/udpfs_gui.pyw"
 
-candidates=(
-  /Library/Frameworks/Python.framework/Versions/Current/bin/python3
-  /Library/Frameworks/Python.framework/Versions/3.*/bin/python3
-  /opt/homebrew/bin/python3
-  /usr/local/bin/python3
-)
-# Apple's own python3 only exists once the Command Line Tools are installed;
-# asking it otherwise pops up the installer.
-if xcode-select -p >/dev/null 2>&1; then candidates+=(/usr/bin/python3); fi
-
-for PY in "${candidates[@]}"; do
-  if [ -x "$PY" ] && "$PY" -c "import tkinter" >/dev/null 2>&1; then
+# Apple silicon runs the arm64 Python, even when this script itself was
+# started under Rosetta.
+if [ "$(sysctl -n hw.optional.arm64 2>/dev/null)" = "1" ]; then
+  order=(aarch64 x86_64)
+else
+  order=(x86_64)
+fi
+for arch in "${order[@]}"; do
+  PY="$RES/python-$arch/bin/python3"
+  if [ -x "$PY" ]; then
+    if [ "$arch" = x86_64 ] && [ "${order[0]}" = aarch64 ]; then
+      exec arch -x86_64 "$PY" "$GUI" "$@"
+    fi
     exec "$PY" "$GUI" "$@"
   fi
 done
 
-/usr/bin/osascript <<'OSA'
-set r to display alert "UDPFS Server needs Python 3" message "Install Python 3 from python.org (it includes the window toolkit), then open UDPFS Server again.
-
-With Homebrew instead: brew install python-tk" as critical buttons {"Cancel", "Open python.org"} default button 2
-if button returned of r is "Open python.org" then open location "https://www.python.org/downloads/macos/"
-OSA
+/usr/bin/osascript -e 'display alert "UDPFS Server is damaged" message "Download it again and copy the whole app." as critical'
 exit 1

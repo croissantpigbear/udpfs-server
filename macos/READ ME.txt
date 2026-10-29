@@ -1,32 +1,26 @@
 UDPFS Server for Mac
 ====================
 
-1. Install Python 3 from python.org (https://www.python.org/downloads/macos/).
-   Its installer includes the window toolkit the app needs.
-   (Homebrew works too: brew install python python-tk)
+Nothing to install: Python is included (Intel and Apple silicon).
 
-2. Drag "UDPFS Server" into your Applications folder.
+1. Drag "UDPFS Server" into your Applications folder.
 
-3. First open: the app is not signed, so macOS will refuse it once.
+2. First open: the app is not signed, so macOS refuses it once.
    Open System Settings > Privacy & Security, scroll down and press
    "Open Anyway" next to UDPFS Server. (On older macOS: right-click the app
    and choose Open.)
    Or in Terminal:  xattr -dr com.apple.quarantine "/Applications/UDPFS Server.app"
 
-4. Pick your OPL folder - the one with DVD, CD, ART, CFG and VMC inside
+3. Pick your OPL folder - the one with DVD, CD, ART, CFG and VMC inside
    (for example /Volumes/MyDrive/PS2) - and press Start.
 
-5. If macOS asks to let UDPFS Server or Python find devices on your local
-   network, or to accept incoming connections, say Allow. If your Mac's
-   firewall is on, press "Allow through firewall" once and enter your
-   password.
+4. If macOS asks to let UDPFS Server or Python find devices on your local
+   network, accept incoming connections, or read a removable volume, say
+   Allow. If your Mac's firewall is on, press "Allow through firewall" once
+   and enter your password.
 
 The dot turns green when the PS2 talks to the server. Keep the app open
 while you play. "Open at login" starts it minimized and already serving.
-
-Drives formatted exFAT or FAT32 on a Mac work as they are. The PS2 also
-writes to this folder (configs, VMCs), so the folder must not be
-read-only.
 
 If the PS2 never finds the server: System Settings > Privacy & Security >
 Local Network, and switch on UDPFS Server (or Python).

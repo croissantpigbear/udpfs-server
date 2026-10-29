@@ -639,6 +639,17 @@ class App:
                 m = re.search(rb"[\r\n]", buf)
                 if not m:
                     break
+                if buf[m.start():m.start() + 1] == b"\r":
+                    # Windows ends lines with \r\n; a lone \r redraws the
+                    # status line. Wait for the byte after a trailing \r.
+                    if m.end() == len(buf):
+                        break
+                    if buf[m.end():m.end() + 1] == b"\n":
+                        piece, sep, buf = buf[:m.start()], b"\n", buf[m.end() + 1:]
+                        text = piece.decode("utf-8", "replace").rstrip()
+                        if text.strip() or not piece:
+                            self.q.put(("line", text))
+                        continue
                 piece, sep, buf = buf[:m.start()], buf[m.start():m.start() + 1], buf[m.end():]
                 text = piece.decode("utf-8", "replace").rstrip()
                 if sep == b"\r":
@@ -747,7 +758,21 @@ class App:
 
 
 def main():
+    if IS_WINDOWS:
+        # Its own taskbar button and icon rather than Python's.
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("UDPFS.Server")
+        except Exception:
+            pass
     root = tk.Tk()
+    icon = os.path.join(HERE, "icon.png")
+    if os.path.isfile(icon):
+        try:
+            root._icon = tk.PhotoImage(file=icon)
+            root.iconphoto(True, root._icon)
+        except Exception:
+            pass
     try:
         ttk.Style().theme_use("vista" if IS_WINDOWS else ("aqua" if IS_MAC else "clam"))
     except Exception:
