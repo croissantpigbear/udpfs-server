@@ -24,7 +24,7 @@ prune() { # python root, stdlib dir: drop what the window never uses
   rm -f "$1"/bin/pip* "$1"/bin/idle* "$1"/bin/pydoc* "$1"/bin/2to3*
   find "$1" -name __pycache__ -type d -prune -exec rm -rf {} +
 }
-APPFILES=(udpfs_server.py compressed_iso LICENSE.txt udpfs_gui.pyw zso_tool.py icon.png)
+APPFILES=(udpfs_server.py compressed_iso LICENSE.txt udpfs_gui.pyw zso_tool.py game_info.py icon.png)
 LZ4=4.4.5
 wheel() { # platform tag, site-packages dir: lz4 for ZSO (vendor/wheels, from PyPI)
   local w=(vendor/wheels/lz4-$LZ4-cp312-cp312-$1.whl)

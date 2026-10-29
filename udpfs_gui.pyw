@@ -537,6 +537,7 @@ class App:
         ttk.Button(bar, text="Clear log", command=self.clear_log).pack(side="right")
         self.compress_btn = ttk.Button(bar, text="Compress games...", command=self.open_compressor)
         self.compress_btn.pack(side="right", padx=(0, 8))
+        ttk.Button(bar, text="Game info...", command=self.open_game_info).pack(side="right", padx=(0, 8))
         self.rate = ttk.Label(outer, text="", foreground=MUTED)
         self.rate.pack(fill="x")
 
@@ -933,6 +934,16 @@ class App:
                 self.restart_server()
         self._compressor = Compressor(self, folder)
 
+    def open_game_info(self):
+        folder = self.folder.get().strip()
+        if self.mode.get() != "folder" or not os.path.isdir(folder):
+            messagebox.showinfo(APP_TITLE, "Game info works on an OPL folder. Pick yours first.")
+            return
+        if getattr(self, "_gameinfo", None) is not None and self._gameinfo.win.winfo_exists():
+            self._gameinfo.win.lift()
+            return
+        self._gameinfo = GameInfo(self, folder)
+
     def restart_server(self):
         if self.proc is None:
             self.start()
@@ -1157,6 +1168,129 @@ def human(n):
         if n < 1024 or unit == "TB":
             return f"{n:.0f} {unit}" if unit in ("B", "KB") else f"{n:.1f} {unit}"
         n /= 1024.0
+
+
+class GameInfo:
+    """The "Game info" window: fills CFG/<game ID>.cfg from the PS2 OPL CFG
+    Database (game_info.py)."""
+
+    def __init__(self, app, folder):
+        import game_info
+        self.gi = game_info
+        self.app = app
+        self.folder = folder
+        self.q = queue.Queue()
+        self.cancel = threading.Event()
+        self.thread = None
+
+        w = self.win = tk.Toplevel(app.root)
+        w.title("Game info")
+        w.minsize(640, 440)
+        w.geometry("720x520")
+        w.protocol("WM_DELETE_WINDOW", self.on_close)
+        f = ttk.Frame(w, padding=10)
+        f.pack(fill="both", expand=True)
+
+        ttk.Label(f, wraplength=680, justify="left", text=(
+            "Adds the genre, release date, developer, players, rating and description to each game's "
+            "settings file (CFG), for OPL's info screen. The info comes from the PS2 OPL CFG Database "
+            "on GitHub (game info from ScreenScraper.fr); about half of all PS2 games have an entry. "
+            "Your own settings - memory cards, compatibility modes, titles you typed - are never changed, "
+            "and every file is backed up to CFG\\info-backup first.")).pack(fill="x")
+
+        opts = ttk.Frame(f)
+        opts.pack(fill="x", pady=(8, 0))
+        ttk.Label(opts, text="Language:").pack(side="left")
+        self.lang = tk.StringVar(value="English")
+        ttk.Combobox(opts, textvariable=self.lang, values=["English", "French"], state="readonly",
+                     width=10).pack(side="left", padx=(6, 18))
+        self.replace = tk.BooleanVar(value=False)
+        ttk.Checkbutton(opts, text="Also refresh info that is already there", variable=self.replace).pack(side="left")
+
+        box = ttk.Frame(f)
+        box.pack(fill="both", expand=True, pady=(8, 4))
+        self.tree = ttk.Treeview(box, columns=("status",), show="headings", height=12)
+        self.tree.heading("status", text="Result")
+        self.tree.column("status", width=640)
+        sb = ttk.Scrollbar(box, command=self.tree.yview)
+        self.tree.configure(yscrollcommand=sb.set)
+        self.tree.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
+
+        self.bar = ttk.Progressbar(f, maximum=1000)
+        self.bar.pack(fill="x")
+        self.summary = ttk.Label(f, text="", foreground=MUTED, wraplength=680, justify="left")
+        self.summary.pack(fill="x", pady=(4, 0))
+
+        btns = ttk.Frame(f)
+        btns.pack(fill="x", pady=(8, 0))
+        self.go_btn = ttk.Button(btns, text="Fill in game info", command=self.go)
+        self.go_btn.pack(side="right")
+        self.stop_btn = ttk.Button(btns, text="Stop", command=self.stop, state="disabled")
+        self.stop_btn.pack(side="right", padx=(0, 8))
+        n = len(self.gi.list_games(folder))
+        self.summary.configure(text=f"{n} game(s) in DVD and CD.")
+        w.after(100, self.pump)
+
+    def go(self):
+        if self.thread is not None:
+            return
+        self.tree.delete(*self.tree.get_children())
+        self.cancel.clear()
+        self.go_btn.configure(state="disabled")
+        self.stop_btn.configure(state="normal")
+        lang = "fr" if self.lang.get() == "French" else "en"
+        replace = self.replace.get()
+
+        def work():
+            try:
+                s = self.gi.fill(self.folder, lang, replace, cancel=self.cancel,
+                                 progress=lambda i, n, name, st: self.q.put(("row", i, n, name, st)))
+                self.q.put(("done", s))
+            except Exception as e:
+                self.q.put(("fail", str(e)))
+        self.thread = threading.Thread(target=work, daemon=True)
+        self.thread.start()
+
+    def stop(self):
+        self.cancel.set()
+        self.stop_btn.configure(state="disabled")
+
+    def pump(self):
+        if not self.win.winfo_exists():
+            return
+        try:
+            while True:
+                m = self.q.get_nowait()
+                if m[0] == "row":
+                    _, i, n, name, st = m
+                    iid = self.tree.insert("", "end", values=(f"{os.path.splitext(name)[0]}  -  {st}",))
+                    self.tree.see(iid)
+                    self.bar["value"] = i * 1000 / max(n, 1)
+                elif m[0] in ("done", "fail"):
+                    self.thread = None
+                    self.go_btn.configure(state="normal")
+                    self.stop_btn.configure(state="disabled")
+                    if m[0] == "fail":
+                        self.summary.configure(text=f"Stopped: {m[1]}", foreground=BAD)
+                    else:
+                        s = m[1]
+                        text = (f"{s['updated']} updated, {s['complete']} already complete, "
+                                f"{s['no_entry']} not in the database")
+                        if s["no_id"]:
+                            text += f", {s['no_id']} without a game ID"
+                        if s["errors"]:
+                            text += f", {s['errors']} could not be downloaded"
+                        text += ". OPL shows it the next time you open a game."
+                        self.summary.configure(text=text, foreground=GOOD if not s["errors"] else WARN)
+        except queue.Empty:
+            pass
+        self.win.after(150, self.pump)
+
+    def on_close(self):
+        if self.thread is not None:
+            self.cancel.set()
+        self.win.destroy()
 
 
 class Compressor:

@@ -12,6 +12,13 @@ games from a PC or Mac with OPL-RA (the UDPFS build in `../OPL-RA-udpfs`).
   OPL and PCSX2 read it too). Used by the window's "Compress games", or
   on its own: `python3 zso_tool.py GAME.iso`. Needs `lz4`
   (`vendor/wheels` for the bundles, `pip install lz4` otherwise).
+- `game_info.py`: fills `CFG/<game ID>.cfg` with game info (Title, Genre,
+  Release, Developer, Publisher, Description, Players, Rating) from the
+  [PS2 OPL CFG Database](https://github.com/Tom-Bruise/PS2-OPL-CFG-Database)
+  (GPL-3.0; info from ScreenScraper.fr), one file per game ID fetched from
+  GitHub. Game IDs come from each disc's SYSTEM.CNF (ISO, ZSO or CSO). Only
+  missing info lines are added; `$` settings are never copied; changed files
+  are backed up to `CFG/info-backup/`. The window's "Game info..." runs it.
 - `udpfs_gui.pyw`: the window (Python standard library + tkinter). Windows,
   macOS, Linux. It also runs [xeRAbora](https://github.com/hacan359/xerabora)
   (found next to the app, in Downloads or on the Desktop, or fetched with
