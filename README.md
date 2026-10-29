@@ -61,6 +61,8 @@ Downloads: see [Releases](https://github.com/croissantpigbear/udpfs-server/relea
   [python-build-standalone](https://github.com/astral-sh/python-build-standalone)
   (3.12, with Tk), so nothing has to be installed.
 
+- `themes/`: the scripts that build the Trophy Night and Shelf themes.
+
 Run from source:
 
     python3 udpfs_gui.pyw
@@ -88,6 +90,8 @@ launcher):
   (from psxdatacenter.com); disc checksums from [Redump](http://redump.org)
   via libretro-database. These are downloaded when you use them, not
   included here.
+- Theme fonts: [Inter](https://github.com/rsms/inter) and
+  [Chakra Petch](https://github.com/cadsondemak/Chakra-Petch) (SIL Open Font License).
 - [python-build-standalone](https://github.com/astral-sh/python-build-standalone),
   [lz4](https://github.com/python-lz4/python-lz4).
 
