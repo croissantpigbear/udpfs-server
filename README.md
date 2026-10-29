@@ -23,6 +23,9 @@ games from a PC or Mac with OPL-RA (the UDPFS build in `../OPL-RA-udpfs`).
   hand, fetch info (`game_info.py`), compress (`zso_tool.py`). Started from
   UDPFS Server's "OPL Library..." button, `OPL Library.exe`, or
   `OPL Library.app` (which uses UDPFS Server.app's Python).
+  Click games to tick them (Shift-click ticks a range; Select all or
+  Ctrl+A ticks every game shown, so it works with Find). Fetch info and
+  Compress act on the ticked games, or on all of them when none are ticked.
 - `udpfs_gui.pyw`: the window (Python standard library + tkinter). Windows,
   macOS, Linux. It also runs [xeRAbora](https://github.com/hacan359/xerabora)
   (found next to the app, in Downloads or on the Desktop, or fetched with

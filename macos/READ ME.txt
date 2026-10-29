@@ -25,6 +25,9 @@ Database, and compress ISOs to ZSO. Keep OPL Library next to UDPFS Server
 (both in Applications): it uses UDPFS Server's Python. Game settings and
 memory cards are never touched; changed CFG files are backed up to
 CFG/info-backup.
+Click games to tick them (Shift-click for a range, Select all or Cmd+A
+for every game shown); Fetch info and Compress use the ticked games, or
+all games when none are ticked.
 
 RetroAchievements: the window also runs xeRAbora. It finds xerabora in
 Downloads or on the Desktop, or press Download in the RetroAchievements

@@ -70,6 +70,23 @@ def save_json(name, data):
         pass
 
 
+def tick_images(root):
+    """Two 16x16 tick boxes for the list, drawn with PhotoImage."""
+    def box(checked):
+        im = tk.PhotoImage(master=root, width=16, height=16)
+        border, fill, mark = "#7a7a7a", "#2e9e44" if checked else "#ffffff", "#ffffff"
+        im.put(fill, to=(2, 2, 14, 14))
+        for i in range(2, 14):
+            for x, y in ((i, 2), (i, 13), (2, i), (13, i)):
+                im.put(border if not checked else fill, (x, y))
+        if checked:
+            for x, y in ((4, 8), (5, 9), (6, 10), (7, 9), (8, 8), (9, 7), (10, 6), (11, 5),
+                         (4, 7), (5, 8), (6, 9), (7, 8), (8, 7), (9, 6), (10, 5), (11, 4)):
+                im.put(mark, (x, y))
+        return im
+    return box(True), box(False)
+
+
 def human(n):
     for unit in ("B", "KB", "MB", "GB", "TB"):
         if n < 1024 or unit == "TB":
@@ -152,6 +169,10 @@ class Library:
         ttk.Entry(flt, textvariable=self.find, width=30).pack(side="left", padx=8)
         self.count = ttk.Label(flt, text="", foreground=MUTED)
         self.count.pack(side="left")
+        ttk.Button(flt, text="Select none", command=self.select_none).pack(side="right")
+        ttk.Button(flt, text="Select all", command=self.select_all).pack(side="right", padx=(0, 8))
+        self.sel_label = ttk.Label(flt, text="", foreground=MUTED)
+        self.sel_label.pack(side="right", padx=(0, 12))
 
         box = ttk.Frame(outer)
         box.pack(fill="both", expand=True, pady=(8, 0))
@@ -166,8 +187,19 @@ class Library:
         self.tree.configure(yscrollcommand=sb.set)
         self.tree.pack(side="left", fill="both", expand=True)
         sb.pack(side="right", fill="y")
-        self.tree.bind("<Double-1>", lambda e: self.edit_info())
+        # Ticks: a click ticks or unticks a game, no Ctrl needed; Shift-click
+        # ticks a range; double-click edits that one game.
+        self.img_on, self.img_off = tick_images(root)
+        self.anchor = None
+        self.tree.bind("<Button-1>", self.on_click)
+        self.tree.bind("<Shift-Button-1>", self.on_shift_click)
+        self.tree.bind("<Double-1>", self.on_double)
+        self.tree.bind("<<TreeviewSelect>>", lambda e: self.on_select())
         self.tree.bind("<F2>", lambda e: self.rename())
+        root.bind("<Control-a>", lambda e: (self.select_all(), "break")[1])
+        root.bind("<Control-A>", lambda e: (self.select_all(), "break")[1])
+        if sys.platform == "darwin":
+            root.bind("<Command-a>", lambda e: (self.select_all(), "break")[1])
 
         bar = ttk.Frame(outer)
         bar.pack(fill="x", pady=(8, 0))
@@ -176,8 +208,9 @@ class Library:
             b = ttk.Button(bar, text=text, command=cmd)
             b.pack(side="left", padx=(0, 8))
             self.btns.append(b)
-        for text, cmd in (("Compress...", self.compress), ("Fetch info...", self.fetch_info)):
-            b = ttk.Button(bar, text=text, command=cmd)
+        self.compress_btn = ttk.Button(bar, text="Compress (all)...", command=self.compress, width=22)
+        self.fetch_btn = ttk.Button(bar, text="Fetch info (all)...", command=self.fetch_info, width=22)
+        for b in (self.compress_btn, self.fetch_btn):
             b.pack(side="right", padx=(8, 0))
             self.btns.append(b)
         self.stop_btn = ttk.Button(bar, text="Stop", command=self.cancel.set, state="disabled")
@@ -265,9 +298,56 @@ class Library:
             g = self.games[key]
             if q and q not in g.name.lower() and q not in (g.gid or "").lower():
                 continue
-            self.tree.insert("", "end", iid=key, text=g.name, values=self.row_values(g))
+            self.tree.insert("", "end", iid=key, text=g.name, values=self.row_values(g), image=self.img_off)
             shown += 1
         self.count.configure(text=f"{shown} of {len(self.games)} games")
+        self.on_select()
+
+    # ---- selection ----
+
+    def on_click(self, event):
+        if self.tree.identify_region(event.x, event.y) not in ("tree", "cell"):
+            return None  # headings, scrollbar: as usual
+        iid = self.tree.identify_row(event.y)
+        if iid:
+            self.tree.selection_toggle(iid)
+            self.tree.focus(iid)
+            self.anchor = iid
+        return "break"
+
+    def on_shift_click(self, event):
+        iid = self.tree.identify_row(event.y)
+        if not iid:
+            return "break"
+        rows = list(self.tree.get_children())
+        a = rows.index(self.anchor) if self.anchor in rows else rows.index(iid)
+        b = rows.index(iid)
+        lo, hi = min(a, b), max(a, b)
+        self.tree.selection_add(rows[lo:hi + 1])
+        return "break"
+
+    def on_double(self, event):
+        iid = self.tree.identify_row(event.y)
+        if iid:
+            self.tree.selection_set(iid)
+            self.edit_info()
+        return "break"
+
+    def select_all(self):
+        self.tree.selection_set(self.tree.get_children())
+
+    def select_none(self):
+        self.tree.selection_remove(self.tree.selection())
+
+    def on_select(self):
+        sel = set(self.tree.selection())
+        for iid in self.tree.get_children():
+            self.tree.item(iid, image=self.img_on if iid in sel else self.img_off)
+        n = len(sel)
+        self.sel_label.configure(text=f"{n} selected" if n else "")
+        what = f"{n} selected" if n else "all"
+        self.fetch_btn.configure(text=f"Fetch info ({what})...")
+        self.compress_btn.configure(text=f"Compress ({what})...")
 
     def row_values(self, g):
         return (g.gid or "", g.sub, g.fmt, human(g.size), g.info_state)
@@ -285,7 +365,8 @@ class Library:
     def rename(self):
         sel = self.selected()
         if len(sel) != 1:
-            messagebox.showinfo(APP_TITLE, "Select one game to rename.", parent=self.root)
+            messagebox.showinfo(APP_TITLE, "Rename works on one game at a time: tick just one."
+                                if sel else "Tick the game to rename.", parent=self.root)
             return
         if self.job:
             return
@@ -351,7 +432,9 @@ class Library:
     def edit_info(self):
         sel = self.selected()
         if len(sel) != 1:
-            messagebox.showinfo(APP_TITLE, "Select one game to edit.", parent=self.root)
+            messagebox.showinfo(APP_TITLE, "Edit info works on one game at a time: tick just one "
+                                "(or double-click it)." if sel else "Tick the game to edit, or double-click it.",
+                                parent=self.root)
             return
         g = sel[0]
         if not g.gid:

@@ -17,6 +17,9 @@ Rename a game, edit its info by hand, fetch info (genre, release date,
 developer, players, description) from the PS2 OPL CFG Database, and
 compress ISOs to ZSO. Game settings and memory cards are never touched;
 changed CFG files are backed up to CFG\info-backup.
+Click games to tick them (Shift-click for a range, Select all or Ctrl+A
+for every game shown); Fetch info and Compress use the ticked games, or
+all games when none are ticked.
 
 RetroAchievements: the window also runs xeRAbora. It finds xerabora in
 Downloads or on the Desktop, or press Download in the RetroAchievements
