@@ -18,6 +18,8 @@ Command line:
 """
 
 import json
+import urllib.request
+import webbrowser
 import plistlib
 import shlex
 import os
@@ -79,6 +81,8 @@ DEFAULTS = {
     "compression": True,
     "verbose": False,
     "autostart": False,
+    "xera_path": "",           # xeRAbora program; "" = look in the usual places
+    "xera_auto": True,         # start xeRAbora together with the server
 }
 
 
@@ -225,7 +229,7 @@ def firewall_rule_exists():
     return None
 
 
-def add_firewall_rule(python_exe):
+def add_firewall_rule(python_exe, extra=()):
     """Ask the OS (UAC prompt / admin password) to let this Python receive
     UDP.
 
@@ -233,8 +237,9 @@ def add_firewall_rule(python_exe):
     on 62966 but moves each console to a data port the OS picks at
     random."""
     if IS_MAC:
-        b = shlex.quote(mac_python_binary(python_exe))
-        sh = f"{MAC_FIREWALL} --add {b}; {MAC_FIREWALL} --unblockapp {b}"
+        progs = [mac_python_binary(python_exe)] + [os.path.realpath(e) for e in extra if e]
+        sh = "; ".join(f"{MAC_FIREWALL} --add {shlex.quote(b)}; {MAC_FIREWALL} --unblockapp {shlex.quote(b)}"
+                       for b in progs)
         script = 'do shell script "%s" with administrator privileges' % sh.replace("\\", "\\\\").replace('"', '\\"')
         try:
             return subprocess.run(["osascript", "-e", script], capture_output=True).returncode == 0
@@ -246,8 +251,107 @@ def add_firewall_rule(python_exe):
            f'protocol=UDP program="{python_exe}" profile=any & '
            f'netsh advfirewall firewall add rule name="{FIREWALL_RULE}" dir=in action=allow '
            f'protocol=UDP localport={DISCOVERY_PORT} profile=any')
+    for e in extra:
+        if e:
+            cmd += (f' & netsh advfirewall firewall add rule name="{FIREWALL_RULE}" dir=in action=allow '
+                    f'protocol=UDP program="{os.path.abspath(e)}" profile=any')
     ret = ctypes.windll.shell32.ShellExecuteW(None, "runas", "cmd.exe", f"/c {cmd}", None, 0)
     return ret > 32
+
+
+# --------------------------------------------------------------------------
+# xeRAbora, the RetroAchievements client (github.com/hacan359/xerabora)
+
+XERA_UI_PORTS = range(18280, 18285)   # it takes the first free one of these
+XERA_RELEASE = "https://github.com/hacan359/xerabora/releases/latest/download/"
+XERA_PAGE = "https://github.com/hacan359/xerabora/releases/latest"
+
+
+def xera_file_name():
+    if IS_WINDOWS:
+        return "xerabora.exe"
+    if IS_MAC:
+        return "xerabora-macos"
+    import platform
+    return "xerabora-linux-aarch64" if platform.machine() in ("aarch64", "arm64") else "xerabora-linux-x86_64"
+
+
+def xera_download_dir():
+    return os.path.join(os.path.dirname(settings_path()), "xerabora")
+
+
+def find_xerabora(configured):
+    """The xeRAbora program: the one picked in the window, else one in the
+    usual places (next to this app, its download folder, Downloads,
+    Desktop, Applications)."""
+    if configured and os.path.isfile(configured):
+        return configured
+    name = xera_file_name()
+    home = os.path.expanduser("~")
+    up = os.path.dirname(HERE)
+    places = [HERE, up, os.path.dirname(up), xera_download_dir(),
+              os.path.join(home, "Downloads"), os.path.join(home, "Desktop"), home]
+    if IS_MAC:
+        places += ["/Applications", os.path.join(home, "Applications")]
+    for d in places:
+        p = os.path.join(d, name)
+        if os.path.isfile(p):
+            return p
+    if IS_WINDOWS:
+        # Browsers save a second download as "xerabora (1).exe".
+        for d in places[3:6]:
+            try:
+                for f in sorted(os.listdir(d)):
+                    if f.lower().startswith("xerabora") and f.lower().endswith(".exe"):
+                        return os.path.join(d, f)
+            except OSError:
+                pass
+    return ""
+
+
+def xera_state(ports):
+    """(port, state dict) of a running xeRAbora, or (0, None)."""
+    for port in ports:
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/state", timeout=1.0) as r:
+                st = json.loads(r.read().decode("utf-8", "replace"))
+            if isinstance(st, dict) and "console" in st:
+                return port, st
+        except Exception:
+            continue
+    return 0, None
+
+
+def xera_quit(port):
+    try:
+        req = urllib.request.Request(f"http://127.0.0.1:{port}/quit", data=b"", method="POST")
+        urllib.request.urlopen(req, timeout=2.0).read()
+        return True
+    except Exception:
+        return False
+
+
+def download_file(url, dest):
+    """urllib first; the system curl (Windows 10+, macOS) when Python's
+    TLS has no certificate store to check GitHub with."""
+    tmp = dest + ".part"
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    try:
+        with urllib.request.urlopen(url, timeout=30) as r, open(tmp, "wb") as f:
+            shutil.copyfileobj(r, f)
+    except Exception:
+        curl = shutil.which("curl") or (r"C:\Windows\System32\curl.exe" if IS_WINDOWS else "")
+        if not curl:
+            raise
+        res = run_hidden([curl, "-fsSL", "--retry", "2", "-o", tmp, url])
+        if res.returncode != 0:
+            raise OSError(res.stderr.strip() or "download failed")
+    if os.path.getsize(tmp) < 100000:
+        os.remove(tmp)
+        raise OSError("the download is too small to be xeRAbora")
+    os.replace(tmp, dest)
+    if not IS_WINDOWS:
+        os.chmod(dest, 0o755)
 
 
 def startup_file():
@@ -293,6 +397,11 @@ class App:
         self.console_ip = ""
         self.started_at = 0.0
         self.stopping = False
+        self.xproc = None            # xeRAbora started by this window
+        self.xport = 0               # its page port once it answers
+        self.xstate = None
+        self.xstopping = False
+        self.xpoll_busy = False
 
         root.title(APP_TITLE)
         root.minsize(620, 460)
@@ -303,6 +412,7 @@ class App:
         self.refresh_firewall()
         self.root.after(200, self._pump)
         self.root.after(1000, self._tick)
+        self.root.after(1500, self._xera_poll)
         root.protocol("WM_DELETE_WINDOW", self.on_close)
 
         if "--minimized" in args:
@@ -363,7 +473,7 @@ class App:
         self.platform_bits(root=self.root)
         ttk.Checkbutton(opt, text="Read-only (the PS2 cannot save configs or VMCs)",
                         variable=self.read_only).grid(row=1, column=0, columnspan=3, sticky="w", pady=(6, 0))
-        ttk.Checkbutton(opt, text="Compressed games (.zso / .cso / .chd)", variable=self.compression,
+        ttk.Checkbutton(opt, text="Compressed games (.zso / .cso)", variable=self.compression,
                         command=self.refresh_checks).grid(row=2, column=0, columnspan=3, sticky="w")
         ttk.Checkbutton(opt, text="Log every request (slow, for debugging)",
                         variable=self.verbose).grid(row=3, column=0, columnspan=3, sticky="w")
@@ -373,6 +483,33 @@ class App:
             ttk.Checkbutton(opt, text="Open with Windows (minimized)" if IS_WINDOWS else "Open at login (minimized)",
                             variable=self.startup,
                             command=self.on_startup).grid(row=5, column=0, columnspan=3, sticky="w")
+
+        # xeRAbora
+        xf = ttk.LabelFrame(outer, text="RetroAchievements (xeRAbora)", padding=8)
+        xf.pack(fill="x", pady=(8, 0))
+        self.xera_path = tk.StringVar()
+        self.xera_entry = ttk.Entry(xf, textvariable=self.xera_path)
+        self.xera_entry.grid(row=0, column=0, columnspan=3, sticky="ew", padx=(0, 8))
+        ttk.Button(xf, text="Browse...", command=self.xera_browse).grid(row=0, column=3)
+        self.xera_dl_btn = ttk.Button(xf, text="Download", command=self.xera_download)
+        self.xera_dl_btn.grid(row=0, column=4, padx=(8, 0))
+        self.xera_btn = ttk.Button(xf, text="Start xeRAbora", command=self.xera_toggle, width=16)
+        self.xera_btn.grid(row=1, column=0, sticky="w", pady=(6, 0))
+        self.xera_dot = tk.Canvas(xf, width=14, height=14, highlightthickness=0, borderwidth=0)
+        try:
+            self.xera_dot.configure(background=ttk.Style().lookup("TFrame", "background") or self.root.cget("background"))
+        except Exception:
+            pass
+        self.xera_dot.grid(row=1, column=1, padx=(10, 4), pady=(6, 0))
+        self.xera_dot_id = self.xera_dot.create_oval(2, 2, 12, 12, fill=MUTED, outline="")
+        self.xera_status = ttk.Label(xf, text="Not running")
+        self.xera_status.grid(row=1, column=2, sticky="w", pady=(6, 0))
+        ttk.Button(xf, text="Open page", command=self.xera_open).grid(row=1, column=3, columnspan=2, sticky="e", pady=(6, 0))
+        self.xera_auto = tk.BooleanVar()
+        ttk.Checkbutton(xf, text="Start xeRAbora with the server (its page opens in your browser)",
+                        variable=self.xera_auto).grid(row=2, column=0, columnspan=5, sticky="w", pady=(6, 0))
+        xf.columnconfigure(2, weight=1)
+        self.xera_path.trace_add("write", lambda *_: self.xera_refresh_label())
 
         # Firewall
         fw = ttk.Frame(outer)
@@ -416,6 +553,7 @@ class App:
         self.log.tag_configure("err", foreground="#ff7b72")
         self.log.tag_configure("ok", foreground="#7ee787")
         self.log.tag_configure("me", foreground="#79c0ff")
+        self.log.tag_configure("ra", foreground="#d2a8ff")
 
         self.inputs = [self.folder_entry, self.folder_btn, self.image_entry, self.image_btn, self.bind_box]
 
@@ -429,6 +567,8 @@ class App:
         self.compression.set(s["compression"])
         self.verbose.set(s["verbose"])
         self.autostart.set(s["autostart"])
+        self.xera_path.set(find_xerabora(s["xera_path"]))
+        self.xera_auto.set(s["xera_auto"])
         self.on_mode()
         ip = primary_ip()
         self.ip_label.configure(text=f"{THIS_PC}: {ip}" if ip else "")
@@ -444,6 +584,8 @@ class App:
         s["compression"] = self.compression.get()
         s["verbose"] = self.verbose.get()
         s["autostart"] = self.autostart.get()
+        s["xera_path"] = self.xera_path.get().strip()
+        s["xera_auto"] = self.xera_auto.get()
         save_settings(s)
 
     def platform_bits(self, root):
@@ -527,11 +669,12 @@ class App:
                                     foreground=WARN)
             self.fw_btn.configure(text="Allow through firewall")
         else:
-            self.fw_label.configure(text=f"Allow inbound UDP for Python in your firewall (port {DISCOVERY_PORT}).",
+            self.fw_label.configure(text=f"Allow inbound UDP for Python (port {DISCOVERY_PORT}) and xeRAbora "
+                                         "(18194) in your firewall.",
                                     foreground=MUTED)
 
     def on_firewall(self):
-        if not add_firewall_rule(console_python()):
+        if not add_firewall_rule(console_python(), [self.xera_path.get().strip()]):
             messagebox.showerror(APP_TITLE, "The firewall rule was not added.")
             return
         self.root.after(2500, self.refresh_firewall)
@@ -618,6 +761,8 @@ class App:
         for w in self.inputs:
             w.configure(state="disabled")
         self._set_status("Waiting for the PS2...", "#d29922")
+        if self.xera_auto.get() and self.xproc is None and not self.xport:
+            self.xera_start(quiet=True)
 
     def stop(self):
         if self.proc is None:
@@ -676,11 +821,26 @@ class App:
                     self.rate.configure(text=val)
                 elif kind == "exit":
                     self._on_exit(val)
+                elif kind == "xline":
+                    if val.strip():
+                        self.write_log("[xeRAbora] " + val, "ra")
+                elif kind == "xexit":
+                    self._xera_exited(val)
+                elif kind == "xstate":
+                    self.xpoll_busy = False
+                    self.xport, self.xstate = val
+                    self.xera_refresh_label()
+                elif kind == "xdl":
+                    self._xera_downloaded(val)
         except queue.Empty:
             pass
         self.root.after(100, self._pump)
 
     def _on_line(self, line):
+        # CHD needs a library these builds do not carry; ZSO is the format
+        # to use, so the server's hint about it is noise here.
+        if "libchdr" in line or "CHD files will not be supported" in line:
+            return
         m = re.match(r"\[(\d+\.\d+\.\d+\.\d+):\d+\]", line)
         if m:
             self.last_activity = time.monotonic()
@@ -788,16 +948,208 @@ class App:
 
     def on_close(self):
         self._store()
-        if self.proc is not None:
-            if not messagebox.askokcancel(APP_TITLE, "Stop the server and close?\n\n"
-                                          "A game that is running from it will freeze."):
+        if self.proc is not None or self.xproc is not None:
+            what = " and xeRAbora" if self.xproc is not None and self.proc is not None else ""
+            msg = ("Stop the server%s and close?\n\nA game that is running from it will freeze." % what
+                   if self.proc is not None else
+                   "Stop xeRAbora and close?\n\nAchievements stop being tracked.")
+            if not messagebox.askokcancel(APP_TITLE, msg):
                 return
-            self.stop()
-            try:
-                self.proc.wait(timeout=3)
-            except Exception:
-                pass
+            if self.proc is not None:
+                self.stop()
+                try:
+                    self.proc.wait(timeout=3)
+                except Exception:
+                    pass
+            if self.xproc is not None:
+                self.xera_stop(wait=True)
         self.root.destroy()
+
+    # ---- xeRAbora ---------------------------------------------------------
+
+    def xera_browse(self):
+        types = [("xeRAbora", "*.exe"), ("All files", "*.*")] if IS_WINDOWS else [("All files", "*")]
+        p = filedialog.askopenfilename(title="xeRAbora program", filetypes=types)
+        if p:
+            self.xera_path.set(os.path.normpath(p))
+            self._store()
+
+    def xera_download(self):
+        dest = os.path.join(xera_download_dir(), xera_file_name())
+        if not messagebox.askyesno(APP_TITLE, "Download the latest xeRAbora from its GitHub releases?\n\n"
+                                   f"It is saved to {dest}"):
+            return
+        self.xera_dl_btn.configure(state="disabled")
+        self.xera_status.configure(text="Downloading xeRAbora...")
+
+        def work():
+            try:
+                download_file(XERA_RELEASE + xera_file_name(), dest)
+                self.q.put(("xdl", (True, dest)))
+            except Exception as e:
+                self.q.put(("xdl", (False, str(e))))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _xera_downloaded(self, res):
+        ok, val = res
+        self.xera_dl_btn.configure(state="normal")
+        if ok:
+            self.xera_path.set(val)
+            self._store()
+            self.write_log(f"xeRAbora downloaded to {val}", "me")
+            if IS_WINDOWS or IS_MAC:
+                self.write_log("Press 'Allow again' by the firewall line so the PS2 can reach it.", "me")
+        else:
+            if messagebox.askyesno(APP_TITLE, f"The download did not work:\n{val}\n\n"
+                                   "Open the releases page to download it yourself?"):
+                webbrowser.open(XERA_PAGE)
+        self.xera_refresh_label()
+
+    def xera_toggle(self):
+        if self.xproc is not None:
+            self.xera_stop()
+        elif self.xport:
+            # Started outside this window: stop it all the same.
+            self.xera_stop()
+        else:
+            self.xera_start()
+
+    def xera_start(self, quiet=False):
+        if self.xproc is not None:
+            return
+        port, st = xera_state(XERA_UI_PORTS)
+        if st is not None:
+            self.xport, self.xstate = port, st
+            self.write_log("xeRAbora is already running; using that one.", "ra")
+            self.xera_refresh_label()
+            return
+        exe = self.xera_path.get().strip()
+        if not exe or not os.path.isfile(exe):
+            exe = find_xerabora("")
+            if exe:
+                self.xera_path.set(exe)
+        if not exe:
+            if not quiet:
+                messagebox.showinfo(APP_TITLE, "xeRAbora was not found. Press Download, or Browse to "
+                                    f"{xera_file_name()} if you already have it.")
+            else:
+                self.write_log("xeRAbora not found: achievements are off (Download it in the "
+                               "RetroAchievements box).", "ra")
+            return
+        self._store()
+        kw = {}
+        if IS_WINDOWS:
+            kw["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
+        try:
+            # --server: it keeps running when its page is closed; this
+            # window decides when it stops.
+            self.xproc = subprocess.Popen([exe, "--server"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                          stdin=subprocess.DEVNULL, cwd=os.path.dirname(exe), **kw)
+        except Exception as e:
+            self.xproc = None
+            messagebox.showerror(APP_TITLE, f"Could not start xeRAbora:\n{e}")
+            return
+        self.xstopping = False
+        self.write_log(f"> {os.path.basename(exe)} --server", "ra")
+        threading.Thread(target=self._xera_read, args=(self.xproc,), daemon=True).start()
+        self.xera_refresh_label()
+
+    def _xera_read(self, proc):
+        for raw in iter(proc.stdout.readline, b""):
+            self.q.put(("xline", raw.decode("utf-8", "replace").rstrip()))
+        proc.wait()
+        self.q.put(("xexit", proc.returncode))
+
+    def _xera_exited(self, code):
+        self.xproc = None
+        self.xport, self.xstate = 0, None
+        if self.xstopping:
+            self.write_log("xeRAbora stopped.", "ra")
+        else:
+            self.write_log(f"xeRAbora exited (code {code}).", "err")
+        self.xstopping = False
+        self.xera_refresh_label()
+
+    def xera_stop(self, wait=False):
+        """Ask it to quit (it finishes sending a pending unlock), then make
+        sure."""
+        self.xstopping = True
+        port = self.xport
+        if not port:
+            port, _ = xera_state(XERA_UI_PORTS)
+        if port:
+            xera_quit(port)
+        proc = self.xproc
+        if proc is None:
+            self.xport, self.xstate = 0, None
+            self.xera_refresh_label()
+            return
+
+        def finish():
+            try:
+                proc.wait(timeout=5)
+            except Exception:
+                try:
+                    proc.terminate()
+                except Exception:
+                    pass
+        if wait:
+            finish()
+        else:
+            threading.Thread(target=finish, daemon=True).start()
+
+    def xera_open(self):
+        port = self.xport or (xera_state(XERA_UI_PORTS)[0])
+        if port:
+            webbrowser.open(f"http://127.0.0.1:{port}/")
+        else:
+            messagebox.showinfo(APP_TITLE, "xeRAbora is not running. Start it first.")
+
+    def _xera_poll(self):
+        if not self.xpoll_busy:
+            self.xpoll_busy = True
+            ports = [self.xport] if self.xport else list(XERA_UI_PORTS)
+
+            def work():
+                res = xera_state(ports)
+                if res[1] is None and len(ports) == 1:
+                    res = xera_state(XERA_UI_PORTS)
+                self.q.put(("xstate", res))
+            threading.Thread(target=work, daemon=True).start()
+        self.root.after(2000, self._xera_poll)
+
+    def xera_refresh_label(self):
+        st = self.xstate
+        running = self.xproc is not None or st is not None
+        self.xera_btn.configure(text="Stop xeRAbora" if running else "Start xeRAbora")
+        color, text = MUTED, "Not running"
+        if not running:
+            if not self.xera_path.get().strip():
+                text = f"Not found - Download it, or Browse to {xera_file_name()}"
+                color = WARN
+        elif st is None:
+            text, color = "Starting...", WARN
+        else:
+            con = st.get("console") or {}
+            login = st.get("login") or {}
+            game = st.get("game") or {}
+            if not login.get("ok"):
+                text, color = "Running - sign in on its page (Open page)", WARN
+            elif not con.get("connected"):
+                text, color = "Running - waiting for the PS2", WARN
+            else:
+                text, color = f"PS2 connected ({con.get('ip') or '?'})", GOOD
+                title = game.get("title") or ""
+                if title and not game.get("checked_only"):
+                    achs = st.get("achievements") or []
+                    got = sum(1 for a in achs if a.get("mode"))
+                    text += f" - {title}"
+                    if achs:
+                        text += f", {got}/{len(achs)} unlocked"
+            if self.xproc is None:
+                text += "  (started outside this window)"
+        self.xera_status.configure(text=text)
+        self.xera_dot.itemconfigure(self.xera_dot_id, fill=color)
 
 
 def human(n):

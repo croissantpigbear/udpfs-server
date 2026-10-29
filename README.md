@@ -13,7 +13,11 @@ games from a PC or Mac with OPL-RA (the UDPFS build in `../OPL-RA-udpfs`).
   on its own: `python3 zso_tool.py GAME.iso`. Needs `lz4`
   (`vendor/wheels` for the bundles, `pip install lz4` otherwise).
 - `udpfs_gui.pyw`: the window (Python standard library + tkinter). Windows,
-  macOS, Linux.
+  macOS, Linux. It also runs [xeRAbora](https://github.com/hacan359/xerabora)
+  (found next to the app, in Downloads or on the Desktop, or fetched with
+  Download): started with `--server` alongside the UDPFS server, stopped
+  with its `POST /quit`, its output in the same log, its status read from
+  `GET /state` on 127.0.0.1:18280-18284.
 - `macos/app-template/`: the `UDPFS Server.app` bundle without Python or
   the server files; `build.sh` fills it in.
 - `windows/`: `UDPFS Server.exe`, a small launcher (`launcher.c`) that starts

@@ -12,6 +12,10 @@ Nothing to install: Python is included.
 If Windows SmartScreen says it "protected your PC": More info > Run anyway.
 (The program is not signed.)
 
+RetroAchievements: the window also runs xeRAbora. It finds xerabora in
+Downloads or on the Desktop, or press Download in the RetroAchievements
+box. With "Start xeRAbora with the server" ticked, Start runs both.
+
 The dot turns green when the PS2 talks to the server. Keep the window
 open while you play. "Open with Windows" starts it minimized at login,
 already serving.

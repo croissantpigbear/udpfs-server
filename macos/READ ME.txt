@@ -19,6 +19,10 @@ Nothing to install: Python is included (Intel and Apple silicon).
    Allow. If your Mac's firewall is on, press "Allow through firewall" once
    and enter your password.
 
+RetroAchievements: the window also runs xeRAbora. It finds xerabora in
+Downloads or on the Desktop, or press Download in the RetroAchievements
+box. With "Start xeRAbora with the server" ticked, Start runs both.
+
 The dot turns green when the PS2 talks to the server. Keep the app open
 while you play. "Open at login" starts it minimized and already serving.
 
