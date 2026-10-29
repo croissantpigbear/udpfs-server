@@ -1,7 +1,23 @@
 # UDPFS Server
 
-A window for Neutrino's UDPFS server (`udpfs_server.py`), for running PS2
-games from a PC or Mac with OPL-RA (the UDPFS build in `../OPL-RA-udpfs`).
+Run PS2 games from a folder on your PC or Mac over the network, with
+RetroAchievements, using the UDPFS build of OPL-RA:
+[croissantpigbear/Open-PS2-Loader](https://github.com/croissantpigbear/Open-PS2-Loader/tree/udpfs)
+(branch `udpfs`).
+
+Two apps, for Windows and macOS, with Python included (nothing to install):
+
+- **UDPFS Server**: pick your OPL folder (DVD, CD, CFG, ART, VMC...) and
+  press Start. Serves ISO, ZSO and CSO games, and runs
+  [xeRAbora](https://github.com/hacan359/xerabora) for RetroAchievements
+  alongside.
+- **OPL Library**: rename games, edit or fetch their info for OPL's info
+  screen, check them against Redump, compress ISOs to ZSO.
+
+Downloads: see [Releases](https://github.com/croissantpigbear/udpfs-server/releases)
+(the OPL ELF and two themes, Trophy Night and Shelf, are attached there too).
+
+## Files
 
 - `udpfs_server.py`, `compressed_iso/`: from
   [rickgaiser/neutrino](https://github.com/rickgaiser/neutrino) `pc/` at
@@ -58,3 +74,21 @@ Make the downloads (needs `curl`, `tar`, `zip`; `mingw-w64` to rebuild the
 launcher):
 
     ./build.sh      # -> dist/UDPFS-Server-windows.zip, dist/UDPFS-Server-mac.zip
+
+## Credits
+
+- [Open PS2 Loader](https://github.com/ps2homebrew/Open-PS2-Loader), and
+  [hacan359's OPL-RA](https://github.com/hacan359/Open-PS2-Loader) with
+  RetroAchievements, which the UDPFS build is based on.
+- [Neutrino](https://github.com/rickgaiser/neutrino) by Rick Gaiser:
+  UDPFS and the original `udpfs_server.py` and `compressed_iso`.
+- [xeRAbora](https://github.com/hacan359/xerabora) by hacan359.
+- Game info: the [PS2 OPL CFG Database](https://github.com/Tom-Bruise/PS2-OPL-CFG-Database)
+  (from ScreenScraper.fr) and [libretro-database](https://github.com/libretro/libretro-database)
+  (from psxdatacenter.com); disc checksums from [Redump](http://redump.org)
+  via libretro-database. These are downloaded when you use them, not
+  included here.
+- [python-build-standalone](https://github.com/astral-sh/python-build-standalone),
+  [lz4](https://github.com/python-lz4/python-lz4).
+
+Licence: Academic Free License 3.0 (`LICENSE.txt`), as OPL and Neutrino.
