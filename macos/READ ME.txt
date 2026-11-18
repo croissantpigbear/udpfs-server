@@ -14,9 +14,10 @@ Nothing to install: Python is included (Intel and Apple silicon).
 3. Pick your OPL folder - the one with DVD, CD, ART, CFG and VMC inside
    (for example /Volumes/MyDrive/PS2) - and press Start.
 
-4. If macOS asks to let UDPFS Server or Python find devices on your local
-   network, accept incoming connections, or read a removable volume, say
-   Allow. If your Mac's firewall is on, press "Allow through firewall" once
+4. The first time you press Start, macOS asks to let UDPFS Server find
+   devices on your local network: say Allow (without it the PS2 never
+   finds the server). If it asks to accept incoming connections or read a
+   removable volume, say Allow too. If your Mac's firewall is on, press "Allow through firewall" once
    and enter your password.
 
 OPL Library (or the "OPL Library..." button): your games in one list.
@@ -42,4 +43,5 @@ The dot turns green when the PS2 talks to the server. Keep the app open
 while you play. "Open at login" starts it minimized and already serving.
 
 If the PS2 never finds the server: System Settings > Privacy & Security >
-Local Network, and switch on UDPFS Server (or Python).
+Local Network, and switch on UDPFS Server. (After replacing the app with a
+new version, macOS may ask again.)

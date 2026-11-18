@@ -5,6 +5,11 @@
 # Needs bash, curl, tar, zip, unzip. The Windows launcher is rebuilt when
 # x86_64-w64-mingw32-gcc is installed (brew install mingw-w64 / apt install
 # gcc-mingw-w64-x86-64); otherwise windows/UDPFS Server.exe is used as is.
+# The Mac launchers (macos/launcher.c) are rebuilt when zig and lipo
+# (llvm-lipo) are installed, otherwise the ones in the templates are used.
+# The Mac apps are signed (ad hoc) with codesign on a Mac, or rcodesign
+# (cargo install apple-codesign) elsewhere: macOS only asks for Local
+# Network permission for a signed app.
 set -e
 cd "$(dirname "$0")"
 PBS_TAG=20261021
@@ -49,6 +54,21 @@ cp "windows/UDPFS Server.exe" "windows/OPL Library.exe" windows/README.txt "$W/"
 (cd build/win && zip -qr ../../dist/UDPFS-Server-windows.zip "UDPFS Server" -x '*.DS_Store')
 
 # ---- Mac
+ZIG=""; command -v zig >/dev/null && ZIG=zig
+[ -z "$ZIG" ] && python3 -m ziglang version >/dev/null 2>&1 && ZIG="python3 -m ziglang"
+LIPO=$(command -v lipo || command -v llvm-lipo || ls /usr/bin/llvm-lipo-* 2>/dev/null | head -1)
+if [ -n "$ZIG" ] && [ -n "$LIPO" ]; then
+  mac_launcher() { # name, extra flags...
+    local n=$1; shift
+    $ZIG cc -target aarch64-macos.11.0 -O2 -Wl,-headerpad_max_install_names "$@" -o build/$n-arm64 macos/launcher.c
+    $ZIG cc -target x86_64-macos.10.15 -O2 -Wl,-headerpad_max_install_names "$@" -o build/$n-x86_64 macos/launcher.c
+    "$LIPO" -create build/$n-arm64 build/$n-x86_64 -output build/$n
+  }
+  mac_launcher srv
+  mac_launcher lib '-DSCRIPT="opl_library.pyw"' -DFIND_SERVER
+  cp build/srv "macos/app-template/Contents/MacOS/UDPFS Server"
+  cp build/lib "macos/library-template/Contents/MacOS/OPL Library"
+fi
 APP="build/mac/UDPFS Server.app"; mkdir -p build/mac
 cp -R macos/app-template "$APP"
 mkdir -p "$APP/Contents/Resources/app"
@@ -65,6 +85,16 @@ LIBAPP="build/mac/OPL Library.app"
 cp -R macos/library-template "$LIBAPP"
 chmod +x "$LIBAPP/Contents/MacOS/OPL Library"
 cp "macos/READ ME.txt" build/mac/
+find build/mac -name __pycache__ -type d -prune -exec rm -rf {} +
+for a in "$APP" "$LIBAPP"; do
+  if command -v codesign >/dev/null; then
+    codesign --force --deep --sign - "$a"
+  elif command -v rcodesign >/dev/null; then
+    rcodesign sign "$a" >build/sign.log 2>&1 || { tail -5 build/sign.log; exit 1; }
+  else
+    echo "warning: $a not signed (no codesign or rcodesign): Local Network permission will not work"
+  fi
+done
 (cd build/mac && zip -qry ../../dist/UDPFS-Server-mac.zip "UDPFS Server.app" "OPL Library.app" "READ ME.txt" -x '*.DS_Store')
 
 rm -rf build

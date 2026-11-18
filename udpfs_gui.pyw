@@ -363,6 +363,31 @@ def startup_file():
     return ""
 
 
+def mac_login_command(gui):
+    """Start the app itself at login (its launcher sets UDPFS_APP_LAUNCHER),
+    so macOS's Local Network permission is the app's, as when it is
+    opened from Finder. A bare Python would have none."""
+    app = os.environ.get("UDPFS_APP_LAUNCHER", "")
+    if app and os.path.isfile(app):
+        return [app, "--autostart", "--minimized"]
+    return [console_python(), gui, "--autostart", "--minimized"]
+
+
+def refresh_mac_login_entry():
+    """A login entry written by an older version runs Python directly;
+    point it at the app."""
+    if not IS_MAC:
+        return
+    path = startup_file()
+    try:
+        with open(path, "rb") as fh:
+            old = plistlib.load(fh)
+        if old.get("ProgramArguments") != mac_login_command(os.path.abspath(__file__)):
+            write_startup_entry(path)
+    except Exception:
+        pass
+
+
 def write_startup_entry(path):
     gui = os.path.abspath(__file__)
     if IS_WINDOWS:
@@ -376,7 +401,7 @@ def write_startup_entry(path):
         with open(path, "wb") as fh:
             plistlib.dump({
                 "Label": LAUNCH_AGENT_ID,
-                "ProgramArguments": [console_python(), gui, "--autostart", "--minimized"],
+                "ProgramArguments": mac_login_command(gui),
                 "RunAtLoad": True,
                 "ProcessType": "Interactive",
                 "LimitLoadToSessionType": "Aqua",
@@ -410,6 +435,7 @@ class App:
         self._load_into_widgets()
         self.refresh_checks()
         self.refresh_firewall()
+        refresh_mac_login_entry()
         self.root.after(200, self._pump)
         self.root.after(1000, self._tick)
         self.root.after(1500, self._xera_poll)
